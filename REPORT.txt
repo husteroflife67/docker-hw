@@ -1,0 +1,76 @@
+Один контейнер
+
+% docker build -t hw-counter .
+% docker run -d --name hw-counter -p 127.0.0.1:8080:8000 -e GREETING=Привет hw-counter
+% curl http://127.0.0.1:8080/
+{"greeting": "Привет", "count": 0, "hostname": "974d1ce03813", "storage": "sqlite"}
+% curl -X POST http://127.0.0.1:8080/increment
+{"greeting": "Привет", "count": 1, "hostname": "974d1ce03813", "storage": "sqlite"}
+
+% docker logs hw-counter
+2026-11-23 19:10:36,911 listening port=8000 storage=sqlite
+2026-11-23 19:10:46,452 http 172.17.0.1 "GET / HTTP/1.1" 200 -
+2026-11-23 19:10:52,499 http 172.17.0.1 "POST /increment HTTP/1.1" 200 -
+
+Compose с SQLite
+
+% docker stop hw-counter
+% docker rm hw-counter
+% cp .env.example .env
+% docker compose -f compose.sqlite.yaml up -d --build
+% curl -X POST http://127.0.0.1:8080/increment
+
+После POST счётчик был равен 1, приветствие — «Привет из Docker!».
+
+% docker compose -f compose.sqlite.yaml down
+% docker compose -f compose.sqlite.yaml up -d
+% curl http://127.0.0.1:8080/
+{"greeting": "Привет из Docker!", "count": 1, "hostname": "1323611341e6", "storage": "sqlite"}
+
+Новый контейнер прочитал ту же единицу из тома docker-hw_sqlite-data.
+
+Compose с Redis
+
+% docker compose -f compose.sqlite.yaml down
+% docker compose up -d --build
+% docker compose ps
+
+У app и redis статус healthy. На Mac опубликован порт 8080 приложения.
+У Redis в колонке PORTS только 6379/tcp.
+
+% curl -X POST http://127.0.0.1:8080/increment
+{"greeting": "Привет из Docker!", "count": 1, "hostname": "b9bfda183e8e", "storage": "redis"}
+% curl -X POST http://127.0.0.1:8080/increment
+{"greeting": "Привет из Docker!", "count": 2, "hostname": "b9bfda183e8e", "storage": "redis"}
+
+% docker compose down
+% docker compose up -d --wait
+% curl http://127.0.0.1:8080/
+{"greeting": "Привет из Docker!", "count": 2, "hostname": "df03dba6c678", "storage": "redis"}
+
+После пересоздания контейнеров счётчик остался равен 2.
+
+% docker compose stop redis
+% curl -i http://127.0.0.1:8080/healthz
+HTTP/1.0 200 OK
+{"status": "alive"}
+
+% curl -i http://127.0.0.1:8080/readyz
+HTTP/1.0 503 Service Unavailable
+{"error": "storage_unavailable"}
+
+% curl -i -X POST http://127.0.0.1:8080/increment
+HTTP/1.0 503 Service Unavailable
+{"error": "storage_unavailable"}
+
+% docker compose start redis
+% curl -i http://127.0.0.1:8080/readyz
+HTTP/1.0 200 OK
+{"status": "ready", "storage": "redis"}
+
+% curl http://127.0.0.1:8080/
+{"greeting": "Привет из Docker!", "count": 2, "hostname": "df03dba6c678", "storage": "redis"}
+% curl -X POST http://127.0.0.1:8080/increment
+{"greeting": "Привет из Docker!", "count": 3, "hostname": "df03dba6c678", "storage": "redis"}
+
+После запуска Redis приложение снова прочитало 2 и увеличило счётчик до 3. Перезапуск app не понадобился.
